@@ -1,0 +1,27 @@
+{
+  "sources": {
+    "pi": "pi5-stm32-slam-main(2).zip",
+    "rl": "Ninobot_controlled_with_torque-add_rl_2-main (1).zip"
+  },
+  "files": {
+    "pi_current/pi5-stm32-slam-main/src/pi5_slam_bringup/launch/robot.launch.py": {
+      "sha256": "dc4b0232714f561bd68a7b2e0a88a256574415fa39f0668cc0eefed3d59ecaec"
+    },
+    "revised/Ninobot_controlled_with_torque-add_rl_2-main/rl_training/ros_env.py": {
+      "sha256": "e4795cba9dadb7b6de0d63783cb702196f633d1f99492ae8177441d260f386d0"
+    },
+    "revised/Ninobot_controlled_with_torque-add_rl_2-main/rl_training/features.py": {
+      "sha256": "7fc38b6c64649d2e27e60efde47276ad24064db9970f5d6f3b986d02008c0055"
+    },
+    "revised/Ninobot_controlled_with_torque-add_rl_2-main/rl_training/train.py": {
+      "sha256": "9cf4be6e9ecad0780cf7c71d690023aa4f3f843a97abd826b22110188f128e44"
+    },
+    "revised/Ninobot_controlled_with_torque-add_rl_2-main/src/nino_control/nino_control/effort_drive.py": {
+      "sha256": "87e7b3f19d58bdf4167d73f5cb51d1801c5a21cddad6d9d9e747633dc9979572"
+    }
+  },
+  "archive_sha256": {
+    "pi": "4abdd127cb2b32d438efdfbf82955dd363a7abf1b676f2eb4bb490fa8a51a353",
+    "rl": "a7d7564935365f4ab2a38adeac3591100eb8c75cf173ce2bf6e2121d8d9e38fc"
+  }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <participant profile_name="pi5_isolated_participant" is_default_profile="true">
+        <rtps>
+            <port>
+                <portBase>7650</portBase>
+            </port>
+        </rtps>
+    </participant>
+</profiles>

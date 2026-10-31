@@ -1,0 +1,18 @@
+# Initial RPBot profile; measure the real chassis and sensor mounts before mapping.
+robot:
+  wheel_radius: 0.060
+  wheel_separation: 0.345
+  base_length: 0.50
+  base_width: 0.38
+  base_height: 0.17498881
+  wheel_width: 0.046
+  imu_xyz: [0.0, 0.0, 0.0]
+  imu_rpy: [0.0, 0.0, 0.0]
+  laser_xyz: [0.223, 0.0, 0.1915]
+  laser_rpy: [0.0, 0.0, 0.0]
+  stm32_port: /dev/stm32_robot
+  lidar_port: /dev/rplidar
+  lidar_baudrate: 115200
+  lidar_scan_mode: Sensitivity
+  # Motion-compensate scans and stamp them at the last beam (scan_deskew node).
+  scan_deskew: true

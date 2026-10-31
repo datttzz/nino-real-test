@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<robot name="pi5_stm32_robot" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="wheel_radius" default="0.062455"/>
+  <xacro:arg name="wheel_separation" default="0.345"/>
+  <xacro:arg name="wheel_width" default="0.046"/>
+  <xacro:arg name="base_length" default="0.50"/>
+  <xacro:arg name="base_width" default="0.38"/>
+  <xacro:arg name="base_height" default="0.17498881"/>
+  <xacro:arg name="imu_xyz" default="0 0 0"/>
+  <xacro:arg name="imu_rpy" default="0 0 0"/>
+  <xacro:arg name="laser_xyz" default="0.223 0 0.1915"/>
+  <xacro:arg name="laser_rpy" default="0 0 0"/>
+  <xacro:property name="radius" value="$(arg wheel_radius)"/>
+  <xacro:property name="separation" value="$(arg wheel_separation)"/>
+  <xacro:property name="height" value="$(arg base_height)"/>
+  <material name="chassis"><color rgba="0.15 0.35 0.65 1"/></material>
+  <material name="wheel"><color rgba="0.12 0.12 0.12 1"/></material>
+  <link name="base_footprint"/>
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${height / 2}"/>
+      <geometry><box size="$(arg base_length) $(arg base_width) $(arg base_height)"/></geometry>
+      <material name="chassis"/>
+    </visual>
+  </link>
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/><child link="base_link"/>
+    <origin xyz="0 0 ${radius}"/>
+  </joint>
+  <xacro:macro name="wheel_joint" params="side sign">
+    <link name="${side}_wheel_link">
+      <visual><origin rpy="${pi / 2} 0 0"/>
+        <geometry><cylinder radius="${radius}" length="$(arg wheel_width)"/></geometry>
+        <material name="wheel"/>
+      </visual>
+    </link>
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/><child link="${side}_wheel_link"/>
+      <origin xyz="0 ${sign * separation / 2} 0"/><axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+  <xacro:wheel_joint side="left" sign="${1}"/>
+  <xacro:wheel_joint side="right" sign="${-1}"/>
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/><child link="imu_link"/>
+    <origin xyz="$(arg imu_xyz)" rpy="$(arg imu_rpy)"/>
+  </joint>
+  <link name="laser"/>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/><child link="laser"/>
+    <origin xyz="$(arg laser_xyz)" rpy="$(arg laser_rpy)"/>
+  </joint>
+</robot>

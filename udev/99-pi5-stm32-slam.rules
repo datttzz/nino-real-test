@@ -1,0 +1,5 @@
+# Exact STM32 already verified on this vehicle. Override stm32_port for another board.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="317136523233", GROUP="dialout", MODE="0660", SYMLINK+="stm32_robot", ENV{ID_MM_DEVICE_IGNORE}="1"
+# Typical A1M8 USB adapter; not yet verified on this vehicle. With multiple CP210x
+# adapters, add ATTRS{serial} or use an explicit /dev/serial/by-id/ path instead.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", GROUP="dialout", MODE="0660", SYMLINK+="rplidar", ENV{ID_MM_DEVICE_IGNORE}="1"

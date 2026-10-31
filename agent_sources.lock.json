@@ -1,0 +1,32 @@
+{
+  "sources": [
+    {
+      "name": "micro_ros_agent",
+      "repository": "https://github.com/micro-ROS/micro-ROS-Agent",
+      "commit": "7c932329ad5591ef23942ef1962534258c16b000",
+      "url": "https://codeload.github.com/micro-ROS/micro-ROS-Agent/tar.gz/7c932329ad5591ef23942ef1962534258c16b000",
+      "sha256": "4046a357c64697869ee6e5ff423d4e284e25a78ae1351df507aa3942aaa1e21a"
+    },
+    {
+      "name": "micro_ros_msgs",
+      "repository": "https://github.com/micro-ROS/micro_ros_msgs",
+      "commit": "b1ef85201e5545d3e07b73f4628bb15836062573",
+      "url": "https://codeload.github.com/micro-ROS/micro_ros_msgs/tar.gz/b1ef85201e5545d3e07b73f4628bb15836062573",
+      "sha256": "e16edc3c21311bc720d43e95edf944d1dac0323c93f526491c6bf6395c3a822a"
+    },
+    {
+      "name": "xrceagent",
+      "repository": "https://github.com/eProsima/Micro-XRCE-DDS-Agent",
+      "commit": "73622810d984349b80bbac0ef55fc0b694d62222",
+      "url": "https://codeload.github.com/eProsima/Micro-XRCE-DDS-Agent/tar.gz/73622810d984349b80bbac0ef55fc0b694d62222",
+      "sha256": "f9c5a4e8c6ed902cb24bdec33269f85dce5b1023c22267d941acbda800a2bf2a"
+    },
+    {
+      "name": "spdlog",
+      "repository": "https://github.com/gabime/spdlog",
+      "commit": "eb3220622e73a4889eee355ffa37972b3cac3df5",
+      "url": "https://codeload.github.com/gabime/spdlog/tar.gz/eb3220622e73a4889eee355ffa37972b3cac3df5",
+      "sha256": "c60cd3742d24c3f8014618ea7e54c7fa3d5fb3886cfd59281101e6f5058dfcc5"
+    }
+  ]
+}

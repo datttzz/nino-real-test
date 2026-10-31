@@ -1,0 +1,24 @@
+stm32_base_bridge:
+  ros__parameters:
+    # Must match RPBot geometry and STM32 User/Config/robot_config.h.
+    wheel_radius: 0.060
+    wheel_separation: 0.345
+
+    # The updated firmware publishes wheel-positive-forward feedback.
+    # Set right_wheel_sign to -1.0 only when testing the old firmware.
+    left_wheel_sign: 1.0
+    right_wheel_sign: 1.0
+    max_position_jump_rad: 4.0
+
+    motor_feedback_topic: /motor_fb
+    imu_input_topic: /imu/data
+    joint_states_topic: /joint_states
+    odom_topic: /odom/unfiltered
+    imu_output_topic: /imu/bridge
+    require_motor_feedback: true
+    motor_status_timeout_s: 0.6
+    allow_motor_enable: false
+
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    imu_frame_id: imu_link

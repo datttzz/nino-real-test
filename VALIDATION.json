@@ -1,0 +1,15 @@
+{
+  "offline_unit_tests": "21 passed",
+  "python_syntax_files": 25,
+  "package_xml": "3 parsed",
+  "shell_syntax": "all scripts passed",
+  "ros_build": "NOT RUN: ROS/colcon absent",
+  "ros_launch": "NOT RUN: ROS absent",
+  "checkpoint_inference": "NOT RUN: actual 50k model and Torch/SB3 absent",
+  "pi_connection": "NOT AVAILABLE",
+  "firmware_torque_watchdog_and_units": "NOT VERIFIED",
+  "hardware_motion": "NOT RUN",
+  "original_sources": "untouched; source hashes in SOURCE_PROVENANCE.json",
+  "tests_use_ros_api_standins": true,
+  "standins_do_not_validate_dds_or_firmware": true
+}

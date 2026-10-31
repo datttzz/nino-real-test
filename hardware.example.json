@@ -1,0 +1,12 @@
+{
+  "firmware_torque_verified": false,
+  "wheel_torque_nm_verified": false,
+  "watchdog_verified": false,
+  "feedback_signs_verified": false,
+  "accept_feedback_rate_difference": false,
+  "command_topic": "/cmd_torque",
+  "left_command_sign": null,
+  "right_command_sign": null,
+  "verified_wheel_torque_limit_nm": 0.0,
+  "verified_watchdog_seconds": 0.0
+}

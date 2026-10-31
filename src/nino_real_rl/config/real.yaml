@@ -1,0 +1,19 @@
+real_controller:
+  ros__parameters:
+    mode: shadow
+    checkpoint: ''
+    hardware_file: ''
+    # These are freshness limits, not a claim of 1 kHz real feedback.
+    sensor_timeout: 0.25
+    command_timeout: 0.25
+    path_timeout: 2.0
+    max_sample_skew: 0.10
+    joint_min_rate_hz: 30.0
+    reference_topic: /rl/cmd_vel_reference
+    path_topic: /plan
+    map_frame: map
+    base_frame: base_footprint
+    wheel_radius: 0.060
+    wheel_separation: 0.345
+    imu_frame: imu_link
+    log_dir: ''

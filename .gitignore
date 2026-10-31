@@ -1,0 +1,16 @@
+build/
+install/
+log/
+.venv*/
+.agent_ws/
+__pycache__/
+*.pyc
+.pytest_cache/
+models/*
+!models/.gitkeep
+hardware.local.json
+maps/*
+!maps/.gitkeep
+runs/
+*.db3
+*.mcap
