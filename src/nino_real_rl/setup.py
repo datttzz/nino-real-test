@@ -12,4 +12,6 @@ setup(name='nino_real_rl', version='0.1.0', packages=find_packages(),
       license='Apache-2.0',
       entry_points={'console_scripts': [
           'real_controller = nino_real_rl.node:main',
+          'teleop_guard = nino_real_rl.teleop:main',
+          'teleop_keyboard = nino_real_rl.keyboard:main',
           'import_checkpoint = nino_real_rl.policy:main']})

@@ -1,0 +1,7 @@
+teleop_guard:
+  ros__parameters:
+    max_linear_speed: 0.10
+    max_angular_speed: 0.40
+    command_timeout: 0.30
+    sensor_timeout: 0.25
+    input_topic: /teleop/cmd_vel

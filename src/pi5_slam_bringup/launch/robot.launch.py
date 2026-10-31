@@ -77,7 +77,7 @@ def setup(context):
     mappings = {key: (' '.join(map(str, val)) if isinstance(val, list) else str(val))
                 for key, val in robot.items()}
     description = xacro.process_file(str(share / 'urdf/robot.urdf.xacro'), mappings=mappings).toxml()
-    permit_motor_enable = mode in ('mapping', 'navigation') and value('allow_motor_enable') == 'true'
+    permit_motor_enable = mode in ('mapping', 'navigation', 'teleop') and value('allow_motor_enable') == 'true'
     sim_time = value('use_sim_time') == 'true'
     slam_params = value('slam_params_file') or str(share / 'config/slam.yaml')
     nodes = [
@@ -104,7 +104,7 @@ def setup(context):
                                        'laser_x': float(robot['laser_xyz'][0]),
                                        'laser_y': float(robot['laser_xyz'][1]),
                                        'laser_yaw': float(robot['laser_rpy'][2])}], output='screen'))
-    if mode != 'bench':
+    if mode not in ('bench', 'teleop'):
         nodes.append(Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node',
                           parameters=[str(share / 'config/ekf.yaml'), {'use_sim_time': sim_time}],
                           remappings=[('odometry/filtered', '/odom')], output='screen'))
@@ -122,7 +122,7 @@ def setup(context):
         nodes.append(LogInfo(msg=f'Nav2 on {map_yaml}; final command topic: '
                                  f'{command_output or ("/cmd_vel_dry" if dry_run else "/cmd_vel")}'))
         nodes += navigation_nodes(share, map_yaml, sim_time, dry_run, initial_pose, command_output)
-    elif mode != 'bench':
+    elif mode in ('demo', 'mapping'):
         nodes.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(Path(get_package_share_directory('slam_toolbox')) /
                                               'launch/online_async_launch.py')),
@@ -152,7 +152,7 @@ def setup(context):
 def generate_launch_description():
     share = Path(get_package_share_directory('pi5_slam_bringup'))
     return LaunchDescription([
-        DeclareLaunchArgument('mode', default_value='bench', choices=['bench', 'demo', 'mapping', 'navigation']),
+        DeclareLaunchArgument('mode', default_value='bench', choices=['bench', 'demo', 'mapping', 'navigation', 'teleop']),
         DeclareLaunchArgument('robot_config', default_value=str(share / 'config/robot.yaml')),
         DeclareLaunchArgument('start_agent', default_value='auto', choices=['auto', 'true', 'false']),
         DeclareLaunchArgument('start_lidar', default_value='auto', choices=['auto', 'true', 'false']),

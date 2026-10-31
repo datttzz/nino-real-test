@@ -3,6 +3,20 @@ from dataclasses import dataclass
 import math
 
 
+def imu_source_stamp_ns(sec, nanosec, now_ns, previous_ns=None, max_age_s=0.05):
+    """Giữ timestamp nguồn; mẫu lỗi không được đổi thành giờ nhận hoặc làm mới gate."""
+    if not math.isfinite(max_age_s) or max_age_s <= 0:
+        raise ValueError('Invalid IMU stamp tolerance')
+    if sec < 0 or not 0 <= nanosec < 1_000_000_000:
+        raise ValueError('Invalid IMU source timestamp')
+    stamp_ns = sec * 1_000_000_000 + nanosec
+    if stamp_ns <= 0 or not 0 <= now_ns - stamp_ns <= max_age_s * 1e9:
+        raise ValueError('Missing, stale or future IMU source timestamp')
+    if previous_ns is not None and stamp_ns <= previous_ns:
+        raise ValueError('Duplicate or backwards IMU source timestamp')
+    return stamp_ns
+
+
 @dataclass
 class FeedbackGate:
     timeout_s: float = 0.6

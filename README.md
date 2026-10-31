@@ -7,6 +7,7 @@ không cần source workspace mô phỏng.
 
 **Có:** LiDAR, encoder, IMU, bridge, EKF, AMCL/Nav2 từ repo Pi;
 PI vận tốc bánh, observation 23 phần tử và inference SAC từ hợp đồng mã train.
+Có chế độ teleop riêng để thử vòng vận tốc firmware trước PI/SAC, không cần map/model.
 **Không có:** Gazebo, train, tuning PID, GT, replay buffer, benchmark.
 
 ## Trạng thái thực tế
@@ -53,6 +54,19 @@ của agent đó trước build/run, hoặc build agent trong repo mới bằng
 `scripts/install.sh` là lựa chọn cho máy mới, có apt/build agent;
 không cần chạy lại trên máy đã đủ phụ thuộc.
 
+## 1a. Teleop bàn phím trước PI + SAC
+
+Hướng dẫn từng terminal: **[docs/TELEOP.md](docs/TELEOP.md)**.
+
+- Terminal 1: `./scripts/run_teleop.sh` mở bridge/agent và teleop guard, motor vẫn chưa được bật tự động.
+- Terminal 2: `./scripts/teleop_keyboard.sh` mở bàn phím; chưa arm thì xe không nhận lệnh chuyển động từ guard.
+- Terminal 3: xem feedback, enable thủ công qua `/set_motor_enable`, rồi arm qua `/teleop/arm` như hướng dẫn.
+- `i` tiến, `,` lùi, `j/l` quay, `k` hoặc Space dừng; `q` hoặc Ctrl+C thoát bàn phím.
+- Mặc định giới hạn 0,10 m/s và 0,40 rad/s. Ngừng phím khoảng 0,25 s gửi zero; mất bàn phím, feedback hoặc tranh quyền điều khiển làm disarm/disable.
+- Kết thúc bằng `./scripts/stop_teleop.sh`, rồi Ctrl+C hai terminal teleop trước khi mở shadow/PI/SAC.
+
+Teleop dùng `/cmd_vel` tới vòng vận tốc STM32, không chạy host PI/SAC, Nav2 hoặc collision monitor. Chế độ này không yêu cầu map, checkpoint hay xác nhận torque; kết quả teleop không chứng minh giao diện `/cmd_torque` đã đúng. Motor cần được enable/arm thủ công, kiểm tra trên bánh kê trước; tránh chướng ngại bằng người điều khiển.
+
 ## 2. Chạy shadow trước, chưa cần model
 
 ```bash
@@ -81,6 +95,9 @@ chưa có inference. `fault` phải rỗng khi path, TF, IMU, odometry và encod
 Nav2 có thể timeout vì shadow không làm robot đi; đó không phải kết quả đánh giá policy.
 Chỉ nhận IMU có orientation hợp lệ, gia tốc gồm trọng lực và lắp cùng hướng body
 như cấu hình hiện tại. IMU xoay khác hướng bị chặn, chưa có phép đổi frame tổng quát.
+Bridge giữ nguyên timestamp nguồn IMU; mẫu cũ quá `stamp_tolerance_s` (mặc định
+0,05 s), tương lai, thiếu stamp, trùng hoặc lùi bị loại. Cần đồng bộ clock
+STM32–Pi; bridge không đổi timestamp lỗi thành giờ nhận để giả dữ liệu mới.
 
 ## 3. Cài inference và nhập checkpoint 50k thật
 
@@ -191,6 +208,9 @@ tính mô-men, nhưng vẫn kiểm tra feedback, motor status và quyền sở h
 đưa mô-men yêu cầu về 0 ngay, bỏ qua slew khi dừng. **Mô-men 0 không phải
 phanh cơ khí**; giữ nút dừng khẩn phần cứng. Mất tiến trình dựa vào watchdog
 firmware đã kiểm chứng, không dựa vào callback shutdown chắc chắn được chạy.
+Nếu MCU báo bit 5 command-timeout trong lúc đã bắt đầu chuyển động, adapter
+gửi torque 0, disarm và gửi disable. Status trở lại healthy không tự arm lại.
+Timeout khi đang chờ goal đầu tiên được giữ ở standby torque 0.
 
 ## Dừng và quay lại cách chạy cũ
 

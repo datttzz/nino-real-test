@@ -11,5 +11,20 @@
   "hardware_motion": "NOT RUN",
   "original_sources": "untouched; source hashes in SOURCE_PROVENANCE.json",
   "tests_use_ros_api_standins": true,
-  "standins_do_not_validate_dds_or_firmware": true
+  "standins_do_not_validate_dds_or_firmware": true,
+  "two_fixes_20261031": {
+    "related_tests": "25 passed: 13 controller guards + 12 bridge tests",
+    "imu_timestamps": "Original source time retained; invalid/duplicate/backwards samples dropped",
+    "mcu_command_timeout": "Disarm/zero/disable during motion; healthy status does not rearm; pre-goal standby retained",
+    "ros_scope": "ROS message callback tests only; no DDS/hardware launch",
+    "hardware_motion": "NOT RUN",
+    "full_suite": "NOT RERUN"
+  },
+  "teleop_20261031": {
+    "related_tests": "20 passed: 4 keyboard + 16 guard/launch",
+    "ros_build": "3 packages passed on laptop x86_64; isolated temporary build",
+    "keyboard_pty": "PASS: reference-only ROS /nino_review/keyboard on localhost; i/j/k/q, inactivity zero 0.265 s, terminal restored",
+    "hardware_motion": "NOT RUN; no serial/agent/firmware command topics in PTY check",
+    "full_suite": "NOT RERUN"
+  }
 }

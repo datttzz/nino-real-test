@@ -14,6 +14,9 @@ Changes for this project:
   `/set_motor_enable` service. Disabling motors remains allowed.
 - Joint output matches the two-wheel URDF; no artificial caster joints.
 - Reject non-finite position and velocity feedback.
+- Preserve the original IMU source timestamp. Missing, stale (default >50 ms),
+  future, duplicate or backwards timestamps are dropped, not restamped at receipt.
+  Invalid samples do not refresh the last valid IMU timestamp.
 
 This bridge does not filter the IMU or publish velocity commands. Firmware still
 owns the watchdog and the direct `/motor_enable` topic.

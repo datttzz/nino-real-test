@@ -119,5 +119,47 @@ class RuntimeTests(unittest.TestCase):
         with patch('nino_real_rl.node.monotonic',return_value=5.01): n.tick()
         self.assertFalse(n.armed)
 
+    def test_firmware_timeout_zeroes_disables_and_requires_manual_rearm(self):
+        for mode in ('pi', 'pi_sac'):
+            with self.subTest(mode=mode):
+                n=self.make(mode=mode);n.pi.integral[:]=1.;n.moving_since=0.
+                # Feedback OK + motor enabled + MCU command timeout.
+                n.on_status(types.SimpleNamespace(data=0x33))
+                self.assertFalse(n.armed)
+                self.assertIn('Firmware command timeout',n.fault)
+                self.assertEqual(n.output.publish.call_args.args[0].data,[0.,0.])
+                self.assertFalse(n.disable.publish.call_args.args[0].data)
+                np.testing.assert_array_equal(n.pi.integral,[0.,0.])
+                np.testing.assert_array_equal(n.action,[0.,0.])
+                # Status healthy again must not rearm or restart actuation.
+                n.on_status(types.SimpleNamespace(data=0x13))
+                self.assertFalse(n.armed)
+                n.output.publish.assert_called_once()
+                n.disable.publish.assert_called_once()
+
+    def test_firmware_timeout_before_first_goal_keeps_zero_standby(self):
+        n=self.make();n.command=np.zeros(2);n.moving_since=None
+        n.on_status(types.SimpleNamespace(data=0x33))
+        self.assertTrue(n.armed)
+        n.basic_ready=Mock();n.graph_error=Mock(return_value='')
+        with patch('nino_real_rl.node.monotonic',return_value=5.2):n.tick()
+        self.assertTrue(n.armed)
+        self.assertEqual(n.output.publish.call_args.args[0].data,[0.,0.])
+        n.disable.publish.assert_not_called()
+
+    def test_firmware_timeout_does_not_make_shadow_actuate(self):
+        n=self.make(False,'shadow')
+        n.on_status(types.SimpleNamespace(data=0x33))
+        self.assertFalse(n.armed)
+        self.assertIsNone(n.output);self.assertIsNone(n.disable)
+
+    def test_can_fault_and_motor_disable_still_disarm(self):
+        for status in (0x17,0x03):
+            with self.subTest(status=status):
+                n=self.make();n.moving_since=None
+                n.on_status(types.SimpleNamespace(data=status))
+                self.assertFalse(n.armed)
+                n.disable.publish.assert_called_once()
+
 
 if __name__=='__main__': unittest.main()

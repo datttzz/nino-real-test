@@ -5,7 +5,7 @@
 | Nguồn | Thành phần | Thay đổi |
 |---|---|---|
 | Pi | stm32_base_bridge | Giữ nguyên code bridge, encoder signs, IMU, odometry, motor enable service |
-| Pi | pi5_slam_bringup | Giữ EKF, AMCL/Nav2, LiDAR, deskew, URDF, RViz; thêm tham số `command_output` ở launch |
+| Pi | pi5_slam_bringup | Giữ EKF, AMCL/Nav2, LiDAR, deskew, URDF, RViz; thêm tham số `command_output` và mode `teleop` ở launch |
 | Pi | scripts / udev / agent lock | Giữ build, môi trường, serial, mapping; thêm script chạy/tắt/import model |
 | RL | features | Chỉ lấy path projection, heading wrap, gravity removal; không lấy reward/training |
 | RL | kinematics | Giữ công thức wheel targets và torque slew/speed limiter |
@@ -68,9 +68,22 @@ sim-to-real thành công chỉ nhờ test Python. Không tuyên bố PID/RL tố
   timestamp phải mới và tăng, status CAN fresh, tốc độ mẫu tối thiểu cấu hình.
 - Đầu vào IMU/odom phải có stamp mới; observation kiểm tra skew, pose TF tại
   timestamp odometry. Không thay missing feature bằng 0.
+- IMU bridge giữ timestamp gốc, loại stamp thiếu/cũ/tương lai/trùng/lùi; không
+  dùng giờ nhận để làm mới mẫu. Mẫu bị loại không cập nhật mốc hợp lệ cuối.
+- Bit 5 command-timeout của MCU khi đang armed và đã bắt đầu chuyển động gây
+  zero torque, disarm và disable; cần người vận hành arm lại. Timeout trước
+  goal đầu tiên không biến standby torque 0 thành lỗi chuyển động.
 - Timer watchdog vẫn kiểm tra mất encoder khi không còn callback joint.
 - Actor chạy cùng executor; nếu actor treo, firmware torque watchdog đã xác nhận
   là lớp xử lý mất lệnh cuối cùng. Repo không dựa vào Python shutdown luôn chạy.
 
 Để dừng robot thật, dùng `scripts/stop_real.sh` và nút dừng phần cứng. Dừng service
 có timeout; không xác nhận robot đã dừng chỉ vì tiến trình gửi lệnh đã thoát.
+
+## Teleop vận tốc firmware
+
+`run_teleop.sh` khởi chạy riêng agent/bridge/robot_state_publisher và teleop guard. Bàn phím gửi `/teleop/cmd_vel`; guard yêu cầu motor status/encoder mới, enable thủ công, zero input trước `/teleop/arm`, rồi giới hạn và gửi `/cmd_vel`. Không có Nav2, collision monitor, map, EKF hoặc policy trong luồng này. Không thay cấu hình hay gain của PI/SAC.
+
+Bàn phím có timer gửi zero khi không có phím chuyển động mới trong 0,25 s, tiếp tục heartbeat zero 10 Hz. Đóng/mất bàn phím khiến input timeout sau 0,30 s và disarm/disable; status timeout, MCU command timeout khi đã di chuyển hoặc phát hiện publisher torque/MIT khác cũng khóa lại. ROS graph chỉ là kiểm tra discovery, không phải mutex phần cứng; scripts chia sẻ lock bringup với run_real.sh/run.sh. Firmware vẫn cần watchdog vận tốc khi tiến trình/đường truyền hỏng.
+
+Teleop kiểm tra vòng vận tốc firmware, không xác minh vòng PI trên Pi hoặc đơn vị mô-men. Phải dừng teleop hoàn toàn trước khi chạy các bước PI/SAC.

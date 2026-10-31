@@ -1,6 +1,7 @@
 """Adapt STM32H723 feedback. Modified for pi5-stm32-slam: freshness and enable gates."""
 
 import math
+from copy import deepcopy
 
 import rclpy
 from nav_msgs.msg import Odometry
@@ -17,7 +18,7 @@ from std_msgs.msg import Bool, UInt8
 from std_srvs.srv import SetBool
 
 from .kinematics import Pose2D, integrate_wheel_positions, wheel_velocities_to_twist
-from .feedback_gate import FeedbackGate
+from .feedback_gate import FeedbackGate, imu_source_stamp_ns
 
 
 SENSOR_QOS = QoSProfile(
@@ -62,6 +63,8 @@ class Stm32BaseBridge(Node):
         self.base_frame_id = str(self.get_parameter('base_frame_id').value)
         self.imu_frame_id = str(self.get_parameter('imu_frame_id').value)
         self.stamp_tolerance = float(self.get_parameter('stamp_tolerance_s').value)
+        if not math.isfinite(self.stamp_tolerance) or self.stamp_tolerance <= 0:
+            raise ValueError('stamp_tolerance_s must be positive and finite')
         self.last_stamp = {}
         self.feedback_gate = FeedbackGate(float(self.get_parameter('motor_status_timeout_s').value))
         if self.feedback_gate.timeout_s <= 0:
@@ -282,7 +285,7 @@ class Stm32BaseBridge(Node):
         self.odom_publisher.publish(output)
 
     def _sanitize_stamp(self, stamp, stream: str):
-        """Keep the STM32 sample time when it is plausible, and never go backwards.
+        """Legacy wheel/odometry stamp adaptation; never use this for IMU.
 
         The micro-ROS clock sync can jump; a stamp in the future or older than
         stamp_tolerance_s is replaced by the receive time. Stamps on one stream are
@@ -300,8 +303,18 @@ class Stm32BaseBridge(Node):
         return Time(nanoseconds=stamp_ns, clock_type=now.clock_type).to_msg()
 
     def _imu_callback(self, message: Imu) -> None:
-        message.header.stamp = self._sanitize_stamp(message.header.stamp, 'imu')
+        try:
+            stamp_ns = imu_source_stamp_ns(
+                message.header.stamp.sec, message.header.stamp.nanosec,
+                self.get_clock().now().nanoseconds, self.last_stamp.get('imu'),
+                self.stamp_tolerance,
+            )
+        except ValueError as exc:
+            self.get_logger().warning(str(exc), throttle_duration_sec=5.0)
+            return
+        self.last_stamp['imu'] = stamp_ns
         if not message.header.frame_id:
+            message = deepcopy(message)
             message.header.frame_id = self.imu_frame_id
         self.imu_publisher.publish(message)
 

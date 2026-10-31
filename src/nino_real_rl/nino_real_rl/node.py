@@ -105,6 +105,10 @@ class RealController(Node):
         self.status, self.status_at = msg.data, monotonic()
         if self.armed and (msg.data & 0x0C or not msg.data & 0x10):
             self.trip('Motor disabled or CAN bus-off')
+        elif self.armed and self.moving_since is not None and msg.data & 0x20:
+            # Bit 5: MCU đã mất lệnh khi đang chạy; chỉ người vận hành mới arm lại.
+            # Trước goal đầu tiên, timeout khi chờ lệnh có thể là trạng thái bình thường.
+            self.trip('Firmware command timeout during motion')
 
     def on_sample(self, key, msg):
         try:
