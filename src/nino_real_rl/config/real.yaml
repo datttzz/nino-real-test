@@ -5,6 +5,9 @@ real_controller:
     hardware_file: ''
     # These are freshness limits, not a claim of 1 kHz real feedback.
     sensor_timeout: 0.25
+    # Status STM32 ~5 Hz (thực đo ~216 ms); deadline riêng, không dùng cho encoder/IMU.
+    # Tăng riêng status từ 250 -> 350 ms; không đổi watchdog MCU 400 ms.
+    motor_status_timeout: 0.35
     command_timeout: 0.25
     path_timeout: 2.0
     max_sample_skew: 0.10
@@ -16,4 +19,8 @@ real_controller:
     wheel_radius: 0.060
     wheel_separation: 0.345
     imu_frame: imu_link
+    # Cùng message/frame/đơn vị STM32; tránh khựng qua callback bridge trước controller.
+    # Nhận mẫu raw phải <=50 ms như gate bridge; cache vẫn hết hạn 250 ms.
+    imu_topic: /imu/data
+    imu_input_max_age: 0.05
     log_dir: ''

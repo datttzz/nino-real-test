@@ -1,0 +1,148 @@
+diff --git a/include/rplidar_node.hpp b/include/rplidar_node.hpp
+index d2a1bd4..55fe1c7 100644
+--- a/include/rplidar_node.hpp
++++ b/include/rplidar_node.hpp
+@@ -42,6 +42,7 @@
+ #include <visibility.h>
+ 
+ #include <chrono>
++#include <memory>
+ 
+ #ifndef _countof
+ #define _countof(_Array) (int)(sizeof(_Array) / sizeof(_Array[0]))
+@@ -118,7 +119,8 @@ private:
+   StopMotorService m_stop_motor_service;
+   StartMotorService m_start_motor_service;
+   /* SDK Pointer */
+-  RPlidarDriver * m_drv = nullptr;
++  std::unique_ptr<RPlidarDriver, void (*)(RPlidarDriver *)> m_drv{
++    nullptr, &RPlidarDriver::DisposeDriver};
+   /* Timer */
+   Timer m_timer;
+   /* Scan Times */
+diff --git a/src/rplidar_node.cpp b/src/rplidar_node.cpp
+index c1284bc..61b1b22 100644
+--- a/src/rplidar_node.cpp
++++ b/src/rplidar_node.cpp
+@@ -34,6 +34,7 @@
+  */
+ 
+ #include <rplidar_node.hpp>
++#include <stdexcept>
+ 
+ namespace rplidar_ros
+ {
+@@ -60,14 +61,13 @@ rplidar_node::rplidar_node(const rclcpp::NodeOptions & options)
+     "RPLIDAR running on ROS 2 package rplidar_ros. SDK Version: '%s'", RPLIDAR_SDK_VERSION);
+ 
+   /* initialize SDK */
+-  m_drv = (channel_type_ == "tcp") ?
++  m_drv.reset((channel_type_ == "tcp") ?
+     RPlidarDriver::CreateDriver(rp::standalone::rplidar::DRIVER_TYPE_TCP) :
+-    RPlidarDriver::CreateDriver(rp::standalone::rplidar::DRIVER_TYPE_SERIALPORT);
++    RPlidarDriver::CreateDriver(rp::standalone::rplidar::DRIVER_TYPE_SERIALPORT));
+ 
+   if (nullptr == m_drv) {
+     /* don't start spinning without a driver object */
+-    RCLCPP_ERROR(this->get_logger(), "Failed to construct driver");
+-    return;
++    throw std::runtime_error("Failed to construct RPLIDAR driver");
+   }
+ 
+   if (channel_type_ == "tcp") {
+@@ -77,8 +77,7 @@ rplidar_node::rplidar_node(const rclcpp::NodeOptions & options)
+         this->get_logger(),
+         "Error, cannot bind to the specified TCP host '%s:%ud'",
+         tcp_ip_.c_str(), static_cast<unsigned int>(tcp_port_));
+-      RPlidarDriver::DisposeDriver(m_drv);
+-      return;
++      throw std::runtime_error("RPLIDAR transport connection failed");
+     }
+   } else {
+     // make connection...
+@@ -86,22 +85,23 @@ rplidar_node::rplidar_node(const rclcpp::NodeOptions & options)
+       RCLCPP_ERROR(
+         this->get_logger(), "Error, cannot bind to the specified serial port '%s'.",
+         serial_port_.c_str());
+-      RPlidarDriver::DisposeDriver(m_drv);
+-      return;
++      throw std::runtime_error("RPLIDAR transport connection failed");
+     }
+   }
+ 
++  RCLCPP_INFO(
++    this->get_logger(),
++    "Transport connected; reading device info before starting scans (SDK may stop the head during initialization)");
++
+   // get rplidar device info
+   if (!getRPLIDARDeviceInfo()) {
+     /* don't continue */
+-    RPlidarDriver::DisposeDriver(m_drv);
+-    return;
++    throw std::runtime_error("RPLIDAR initialization failed while reading device info/health");
+   }
+ 
+   // check health...
+   if (!checkRPLIDARHealth()) {
+-    RPlidarDriver::DisposeDriver(m_drv);
+-    return;
++    throw std::runtime_error("RPLIDAR initialization failed while reading device info/health");
+   }
+ 
+   /* start motor and scanning */
+@@ -129,9 +129,11 @@ rplidar_node::rplidar_node(const rclcpp::NodeOptions & options)
+ 
+ rplidar_node::~rplidar_node()
+ {
+-  m_drv->stop();
+-  m_drv->stopMotor();
+-  RPlidarDriver::DisposeDriver(m_drv);
++  // SDK handle is owned once; failed construction cannot leave a dangling pointer.
++  if (m_drv) {
++    m_drv->stop();
++    m_drv->stopMotor();
++  }
+ }
+ 
+ void rplidar_node::publish_scan(
+@@ -415,8 +417,7 @@ void rplidar_node::start()
+   if (!set_scan_mode()) {
+     this->stop();
+     RCLCPP_ERROR(this->get_logger(), "Failed to set scan mode");
+-    RPlidarDriver::DisposeDriver(m_drv);
+-    exit(1);
++    throw std::runtime_error("RPLIDAR failed to start the requested scan mode");
+   }
+   m_running = true;
+ }
+diff --git a/src/standalone_rplidar.cpp b/src/standalone_rplidar.cpp
+index c75c261..83f66bb 100644
+--- a/src/standalone_rplidar.cpp
++++ b/src/standalone_rplidar.cpp
+@@ -13,13 +13,24 @@
+ // limitations under the License.
+ 
+ #include <memory>
++#include <exception>
+ #include <rplidar_node.hpp>
+ #include <rclcpp/rclcpp.hpp>
+ 
+ int main(int argc, char ** argv)
+ {
+   rclcpp::init(argc, argv);
+-  rclcpp::spin(std::make_shared<rplidar_ros::rplidar_node>(rclcpp::NodeOptions()));
+-  rclcpp::shutdown();
++  try {
++    rclcpp::spin(std::make_shared<rplidar_ros::rplidar_node>(rclcpp::NodeOptions()));
++  } catch (const std::exception & error) {
++    RCLCPP_ERROR(rclcpp::get_logger("rplidar_startup"), "%s", error.what());
++    if (rclcpp::ok()) {
++      rclcpp::shutdown();
++    }
++    return 1;
++  }
++  if (rclcpp::ok()) {
++    rclcpp::shutdown();
++  }
+   return 0;
+ }

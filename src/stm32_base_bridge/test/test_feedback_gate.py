@@ -24,6 +24,19 @@ def test_imu_gate_preserves_original_sample_time():
     assert imu_source_stamp_ns(9,980_000_000,10_000_000_000)==9_980_000_000
 
 
+def test_feedback_block_reason_distinguishes_stale_and_can_loss():
+    gate=FeedbackGate(.6)
+    assert 'not received' in gate.block_reason(1.)
+    gate.update(3,1.)
+    assert 'stale' in gate.block_reason(1.7)
+    gate.update(1,2.)
+    assert 'missing feedback' in gate.block_reason(2.1)
+    gate.update(7,3.)
+    assert 'bus-off' in gate.block_reason(3.1)
+    gate.update(35,4.)
+    assert gate.ready(4.1)  # Motor disable/timeout không được chặn feedback thụ động.
+
+
 @pytest.mark.parametrize('sec,nsec,previous',[
     (0,0,None), (1,0,None), (10,1,None),
     (9,980_000_000,9_980_000_000), (9,980_000_000,9_990_000_000),

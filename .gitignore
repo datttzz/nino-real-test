@@ -13,5 +13,16 @@ hardware.local.json
 maps/*
 !maps/.gitkeep
 runs/
+real_data/
 *.db3
 *.mcap
+
+# Driver chính thức được fetch và khóa commit bằng scripts/fetch_sllidar.sh.
+src/sllidar_ros2/
+
+# Driver 2.1.0 và bản sửa trong patches/, tải bằng fetch_rplidar.sh.
+src/rplidar_ros/
+
+# Local experiment exports and backups; preserve on disk, outside source history.
+benchmark_results/
+archive/

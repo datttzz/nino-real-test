@@ -1,7 +1,17 @@
 teleop_guard:
   ros__parameters:
-    max_linear_speed: 0.10
+    max_linear_speed: 0.50
     max_angular_speed: 0.40
     command_timeout: 0.30
     sensor_timeout: 0.25
+    # Trạng thái MCU khoảng 5 Hz; khớp motor_status_timeout_s của bridge.
+    motor_status_timeout: 0.60
+    input_topic: /teleop/cmd_vel
+
+nino_teleop_keyboard:
+  ros__parameters:
+    max_linear_speed: 0.50
+    max_angular_speed: 0.40
+    # Lớn hơn key-repeat delay 0,5 s; heartbeat vẫn gửi mỗi 0,1 s.
+    key_hold_timeout: 0.60
     input_topic: /teleop/cmd_vel

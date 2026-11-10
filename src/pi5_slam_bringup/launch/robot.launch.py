@@ -32,7 +32,8 @@ def navigation_nodes(share, map_yaml, sim_time, dry_run, initial_pose, command_o
     return [
         server('nav2_map_server', 'map_server', extra={'yaml_filename': map_yaml}),
         server('nav2_amcl', 'amcl', extra=initial_pose),
-        manager('lifecycle_manager_localization', ['map_server', 'amcl']),
+        # Chờ dịch vụ DDS được khám phá, tránh mất response configure lúc boot.
+        TimerAction(period=5.0, actions=[manager('lifecycle_manager_localization', ['map_server', 'amcl'])]),
         server('nav2_controller', 'controller_server', to_nav),
         server('nav2_smoother', 'smoother_server'),
         server('nav2_planner', 'planner_server'),
@@ -45,7 +46,7 @@ def navigation_nodes(share, map_yaml, sim_time, dry_run, initial_pose, command_o
                extra={'cmd_vel_out_topic': command_output} if command_output else
                      ({'cmd_vel_out_topic': 'cmd_vel_dry'} if dry_run else None)),
         # Allow lifecycle services to be discovered before the first transition.
-        TimerAction(period=5.0, actions=[manager('lifecycle_manager_navigation', NAV2_NODES)]),
+        TimerAction(period=10.0, actions=[manager('lifecycle_manager_navigation', NAV2_NODES)]),
     ]
 
 
@@ -59,7 +60,7 @@ def setup(context):
         return automatic if value(key) == 'auto' else value(key) == 'true'
 
     agent = flag('start_agent', mode != 'demo')
-    lidar = flag('start_lidar', mode in ('mapping', 'navigation'))
+    lidar = flag('start_lidar', mode in ('mapping', 'navigation', 'path_test'))
     if mode == 'demo' and (agent or lidar):
         raise RuntimeError('Demo mode cannot open STM32 or LiDAR devices')
     if mode == 'demo' and int(os.environ.get('ROS_DOMAIN_ID', '0')) == 0:
@@ -77,7 +78,7 @@ def setup(context):
     mappings = {key: (' '.join(map(str, val)) if isinstance(val, list) else str(val))
                 for key, val in robot.items()}
     description = xacro.process_file(str(share / 'urdf/robot.urdf.xacro'), mappings=mappings).toxml()
-    permit_motor_enable = mode in ('mapping', 'navigation', 'teleop') and value('allow_motor_enable') == 'true'
+    permit_motor_enable = mode in ('mapping', 'navigation', 'teleop', 'path_test') and value('allow_motor_enable') == 'true'
     sim_time = value('use_sim_time') == 'true'
     slam_params = value('slam_params_file') or str(share / 'config/slam.yaml')
     nodes = [
@@ -128,7 +129,7 @@ def setup(context):
                                               'launch/online_async_launch.py')),
             launch_arguments={'use_sim_time': str(sim_time).lower(), 'autostart': 'true',
                               'slam_params_file': slam_params}.items()))
-    deskew = mode in ('mapping', 'navigation') and bool(robot.get('scan_deskew', False))
+    deskew = mode in ('mapping', 'navigation', 'path_test') and bool(robot.get('scan_deskew', False))
     if deskew:
         nodes.append(Node(package='pi5_slam_bringup', executable='scan_deskew', name='scan_deskew',
                           parameters=[{'laser_x': float(robot['laser_xyz'][0]),
@@ -152,7 +153,7 @@ def setup(context):
 def generate_launch_description():
     share = Path(get_package_share_directory('pi5_slam_bringup'))
     return LaunchDescription([
-        DeclareLaunchArgument('mode', default_value='bench', choices=['bench', 'demo', 'mapping', 'navigation', 'teleop']),
+        DeclareLaunchArgument('mode', default_value='bench', choices=['bench', 'demo', 'mapping', 'navigation', 'teleop', 'path_test']),
         DeclareLaunchArgument('robot_config', default_value=str(share / 'config/robot.yaml')),
         DeclareLaunchArgument('start_agent', default_value='auto', choices=['auto', 'true', 'false']),
         DeclareLaunchArgument('start_lidar', default_value='auto', choices=['auto', 'true', 'false']),

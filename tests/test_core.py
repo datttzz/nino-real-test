@@ -6,11 +6,34 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src/nino_real_rl'))
-from nino_real_rl.core import Contract, WheelPI, observation, source_stamp, hardware_contract
+from nino_real_rl.core import Contract, WheelPI, observation, source_stamp, hardware_contract, load_hardware_contract
 from nino_real_rl.features import imu_features, path_features
 
 
 class CoreTests(unittest.TestCase):
+    def test_hardware_file_missing_invalid_or_unverified_explains_error(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / 'hardware.json'
+            with self.assertRaisesRegex(ValueError, 'Cannot read hardware_file'):
+                load_hardware_contract(str(file))
+            for text in ('not json', '[]', json.dumps({'firmware_torque_verified': False})):
+                file.write_text(text)
+                with self.assertRaisesRegex(ValueError, 'hardware_file'):
+                    load_hardware_contract(str(file))
+
+    def test_hardware_load_does_not_modify_original_file(self):
+        import tempfile
+        source = Path(__file__).resolve().parents[1] / 'hardware.example.json'
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / 'hardware.json'
+            file.write_bytes(source.read_bytes())
+            before = file.read_bytes()
+            with self.assertRaisesRegex(ValueError, 'firmware_torque_verified'):
+                load_hardware_contract(str(file))
+            self.assertEqual(file.read_bytes(), before)
+
     def test_original_23_element_observation_with_known_values(self):
         # Independent explicit expected order; avoids a same-code round trip.
         obs, metrics = observation(Contract(), (2,.1,math.pi/6), [(0,0),(10,0)],

@@ -28,8 +28,21 @@ class FeedbackGate:
         self.received_at = now
 
     def ready(self, now: float) -> bool:
-        if self.received_at is None or not math.isfinite(now):
-            return False
+        return not self.block_reason(now)
+
+    def block_reason(self, now: float) -> str:
+        """Lý do ngừng xuất odometry; gate này không chặn /cmd_vel."""
+        if self.received_at is None:
+            return 'motor status not received'
+        if not math.isfinite(now):
+            return 'invalid clock'
         age = now - self.received_at
-        return (0 <= age <= self.timeout_s and
-                self.status & 0x03 == 0x03 and self.status & 0x0C == 0)
+        if not math.isfinite(age) or age < 0:
+            return 'invalid or backwards status clock'
+        if age > self.timeout_s:
+            return f'motor status stale: age={age:.3f}s, limit={self.timeout_s:.3f}s'
+        if self.status & 0x0C:
+            return f'CAN bus-off: status=0x{self.status:02x}'
+        if self.status & 0x03 != 0x03:
+            return f'missing feedback from one or both wheels: status=0x{self.status:02x}'
+        return ''

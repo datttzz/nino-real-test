@@ -1,6 +1,6 @@
 """Motion-compensate RPLIDAR scans and restamp them to the time of the last beam.
 
-rplidar_ros stamps a revolution when it has been read out, so the header is
+The SL LIDAR driver stamps a revolution when it has been read out, so the header is
 about one scan period (~0.14 s at 7 Hz) later than the first beam. SLAM Toolbox
 looks up a single odometry pose at the header time and does not deskew, so a
 turning robot smears every scan. This node rotates and translates each beam

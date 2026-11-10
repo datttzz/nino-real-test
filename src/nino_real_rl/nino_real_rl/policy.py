@@ -30,6 +30,17 @@ def load_model(path):
     return model
 
 
+def source_contract(config, metadata):
+    """Giữ đúng thứ tự, đơn vị và scale đầu vào/đầu ra của lần train."""
+    if metadata.get('observations') != OBSERVATIONS or metadata.get('action_order') != ['left', 'right']:
+        raise ValueError('Original metadata does not match observation/action order')
+    env = config['environment']
+    contract = Contract(**{k: env[k] for k in ('max_path_deviation', 'residual_limit', 'step_seconds')})
+    if metadata.get('action_scale_nm') != contract.residual_limit:
+        raise ValueError('Action scale mismatch between metadata and config')
+    return contract
+
+
 class Policy:
     def __init__(self, directory):
         directory = Path(directory).expanduser().resolve()
@@ -37,12 +48,19 @@ class Policy:
         for name in ('model.zip', 'config.yaml', 'metadata.json'):
             if digest(directory/name) != manifest['sha256'][name]:
                 raise ValueError('Checkpoint bundle changed: '+name)
-        if manifest['observations'] != OBSERVATIONS or manifest['timesteps'] != 50000:
+        steps = manifest['timesteps']
+        if (manifest.get('format_version') != 1 or manifest['observations'] != OBSERVATIONS
+                or type(steps) is not int or steps <= 0):
             raise ValueError('Unsupported checkpoint contract')
-        self.contract = Contract(**manifest['environment'])
+        config = yaml.safe_load((directory/'config.yaml').read_text())
+        metadata = json.loads((directory/'metadata.json').read_text())
+        self.contract = source_contract(config, metadata)
+        if manifest['environment'] != asdict(self.contract):
+            raise ValueError('Manifest environment differs from original training config')
         self.model = load_model(directory/'model.zip')
-        if self.model.num_timesteps != 50000:
-            raise ValueError('Model is not the imported 50k checkpoint')
+        if self.model.num_timesteps != steps:
+            raise ValueError('Model timestep differs from imported checkpoint manifest')
+        self.timesteps = steps
 
     def predict(self, obs):
         action, _ = self.model.predict(obs, deterministic=True)
@@ -52,28 +70,30 @@ class Policy:
         return np.clip(action, -1, 1)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model', required=True)
     parser.add_argument('--config', required=True, help='Original run config.yaml')
     parser.add_argument('--metadata', required=True, help='Original run metadata.json')
     parser.add_argument('--output', required=True)
+    parser.add_argument('--expected-steps', type=int, default=50000,
+                        help='Số step phải đọc đúng từ model; mặc định 50000 cho lệnh cũ')
     parser.add_argument('--confirm-source-contract', action='store_true',
                         help='Original run used supplied unwrapped 23D trainer, PI .30/.10/Kd0 and limits; no VecNormalize/history')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.expected_steps <= 0:
+        parser.error('--expected-steps must be positive')
     if not args.confirm_source_contract:
         parser.error('Original controller config/wrappers cannot be inferred from model weights; verify and use --confirm-source-contract')
     config = yaml.safe_load(Path(args.config).read_text())
     metadata = json.loads(Path(args.metadata).read_text())
-    if metadata.get('observations') != OBSERVATIONS or metadata.get('action_order') != ['left', 'right']:
-        parser.error('Original metadata does not match observation/action order')
-    env = config['environment']
-    contract = Contract(**{k: env[k] for k in ('max_path_deviation', 'residual_limit', 'step_seconds')})
-    if metadata.get('action_scale_nm') != contract.residual_limit:
-        parser.error('Action scale mismatch between metadata and config')
+    try:
+        contract = source_contract(config, metadata)
+    except (ValueError, KeyError, TypeError) as exc:
+        parser.error(str(exc))
     model = load_model(args.model)
-    if model.num_timesteps != 50000:
-        parser.error(f'Expected exactly 50000 steps; got {model.num_timesteps}')
+    if model.num_timesteps != args.expected_steps:
+        parser.error(f'Expected exactly {args.expected_steps} steps; got {model.num_timesteps}')
     probe, _ = model.predict(np.zeros(23, dtype=np.float32), deterministic=True)
     if np.asarray(probe).shape != (2,) or not np.all(np.isfinite(probe)):
         parser.error('Checkpoint inference failed')
@@ -93,7 +113,7 @@ def main():
                         sha256={n: digest(stage/n) for n in ('model.zip','config.yaml','metadata.json')})
         (stage/'contract.json').write_text(json.dumps(manifest, indent=2)+'\n')
         stage.rename(output)
-    print(f'Imported verified 50k model bundle: {output}')
+    print(f'Imported verified {model.num_timesteps}-step model bundle: {output}')
 
 
 if __name__ == '__main__':

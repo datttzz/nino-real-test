@@ -28,6 +28,14 @@ SENSOR_QOS = QoSProfile(
     durability=DurabilityPolicy.VOLATILE,
 )
 
+# Chỉ queue IMU đầu vào: callback chậm không được kéo theo FIFO mẫu quá hạn.
+LATEST_IMU_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
 
 class Stm32BaseBridge(Node):
     """Convert STM32 wheel/IMU feedback into topics consumed by Linorobot2."""
@@ -113,7 +121,7 @@ class Stm32BaseBridge(Node):
             Imu,
             str(self.get_parameter('imu_input_topic').value),
             self._imu_callback,
-            SENSOR_QOS,
+            LATEST_IMU_QOS,
         )
         self.create_service(SetBool, '/set_motor_enable', self._set_motor_enable)
         self.create_subscription(UInt8, '/motor_status', self._motor_status_callback, 10)
@@ -128,6 +136,11 @@ class Stm32BaseBridge(Node):
             f"/odom/unfiltered, {self.get_parameter('imu_input_topic').value} -> "
             f"{self.get_parameter('imu_output_topic').value} "
             f'(R={self.wheel_radius:.6f} m, W={self.wheel_separation:.3f} m)'
+        )
+        self.get_logger().info(
+            'Velocity route: teleop guard publishes /cmd_vel (Twist) directly to STM32; '
+            'bridge does not relay/clamp velocity. /set_motor_enable publishes '
+            '/motor_enable (Bool); response confirms publish, not CAN motor activation.'
         )
 
     def _motor_status_callback(self, message: UInt8) -> None:
@@ -147,6 +160,9 @@ class Stm32BaseBridge(Node):
         now = self.get_clock().now().nanoseconds * 1e-9
         if self.get_parameter('require_motor_feedback').value and not self.feedback_gate.ready(now):
             self.last_left_position = self.last_right_position = None
+            self.get_logger().warning(
+                'Wheel feedback/odometry blocked: '+self.feedback_gate.block_reason(now)+
+                '; /cmd_vel is not modified by this bridge',throttle_duration_sec=2.)
             return
         indices = self._find_wheel_indices(list(feedback.name))
         if indices is None:
@@ -322,6 +338,12 @@ class Stm32BaseBridge(Node):
         if request.data and not self.get_parameter('allow_motor_enable').value:
             response.success = False
             response.message = 'Motor enable is disabled by this launch configuration'
+            self.get_logger().warning(response.message)
+            return response
+        if request.data and self.count_subscribers('/motor_enable') == 0:
+            response.success = False
+            response.message = 'Motor enable rejected: STM32 /motor_enable subscriber not discovered'
+            self.get_logger().warning(response.message)
             return response
         command = Bool()
         command.data = bool(request.data)

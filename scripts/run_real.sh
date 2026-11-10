@@ -14,4 +14,9 @@ fi
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 exec 9>"${XDG_RUNTIME_DIR:-/tmp}/pi5-stm32-slam-${UID}-${ROS_DOMAIN_ID}.lock"
 flock -n 9 || { echo 'Another project bringup is running in this ROS domain' >&2; exit 1; }
-exec ros2 launch nino_real_rl real_test.launch.py "$@"
+task_launch=real_test.launch.py
+if [[ "${1:-}" == '--straight-line' ]]; then
+  shift
+  task_launch=straight_line.launch.py
+fi
+exec ros2 launch nino_real_rl "$task_launch" "$@"

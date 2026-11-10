@@ -20,6 +20,7 @@ sudo apt-get install -y --no-install-recommends \
   ros-jazzy-fastrtps-cmake-module ros-jazzy-rosidl-default-generators \
   ros-jazzy-rosidl-typesupport-fastrtps-cpp ros-jazzy-ament-lint-auto \
   ros-jazzy-ament-cmake-gtest
+"$(dirname -- "${BASH_SOURCE[0]}")/fetch_rplidar.sh"
 "$(dirname -- "${BASH_SOURCE[0]}")/build_agent.sh"
 "$(dirname -- "${BASH_SOURCE[0]}")/build.sh"
 echo 'Build complete. Configure serial access with ./scripts/setup_udev.sh, then start bench or demo mode.'

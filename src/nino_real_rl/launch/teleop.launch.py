@@ -14,11 +14,12 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('robot_config',default_value=str(pi/'config/robot.yaml')),
         DeclareLaunchArgument('stm32_port',default_value=''),
+        DeclareLaunchArgument('teleop_config',default_value=str(own/'config/teleop.yaml')),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(str(pi/'launch/robot.launch.py')),
             launch_arguments={'mode':'teleop','robot_config':LaunchConfiguration('robot_config'),
                               'stm32_port':LaunchConfiguration('stm32_port'),
                               'start_agent':'true','start_lidar':'false','rviz':'false',
                               'use_sim_time':'false','allow_motor_enable':'true'}.items()),
         Node(package='nino_real_rl',executable='teleop_guard',name='teleop_guard',output='screen',
-             parameters=[str(own/'config/teleop.yaml'),{'use_sim_time':False}]),
+             parameters=[LaunchConfiguration('teleop_config'),{'use_sim_time':False}]),
     ])

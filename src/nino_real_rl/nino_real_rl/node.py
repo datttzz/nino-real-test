@@ -7,7 +7,7 @@ from time import monotonic
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
 from rclpy.time import Time
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry, Path as RosPath
@@ -16,7 +16,7 @@ from std_msgs.msg import Bool, UInt8, String, Float64MultiArray
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformListener
 
-from .core import Contract, WheelPI, observation, source_stamp, hardware_contract
+from .core import Contract, WheelPI, observation, source_stamp, hardware_contract, load_hardware_contract
 from .policy import Policy
 
 
@@ -28,10 +28,12 @@ class RealController(Node):
     def __init__(self):
         super().__init__('real_controller')
         defaults = dict(mode='shadow', checkpoint='', hardware_file='',
-                        sensor_timeout=.25, command_timeout=.25, path_timeout=2.,
+                        sensor_timeout=.25, motor_status_timeout=.35,
+                        command_timeout=.25, path_timeout=2.,
                         max_sample_skew=.10, joint_min_rate_hz=30.,
                         reference_topic='/rl/cmd_vel_reference', path_topic='/plan',
                         map_frame='map', base_frame='base_footprint', imu_frame='imu_link',
+                        imu_topic='/imu/data', imu_input_max_age=.05,
                         wheel_radius=.060, wheel_separation=.345,
                         left_feedback_sign=1., right_feedback_sign=1., log_dir='')
         for key, value in defaults.items():
@@ -42,27 +44,35 @@ class RealController(Node):
             raise ValueError('mode must be shadow, pi or pi_sac')
         if self.cfg['reference_topic'] in ('/cmd_vel', '/cmd_torque', '/cmd_mit'):
             raise ValueError('Reference must not be a firmware command topic')
-        for k in ('sensor_timeout','command_timeout','path_timeout','max_sample_skew','joint_min_rate_hz'):
+        for k in ('sensor_timeout','motor_status_timeout','imu_input_max_age','command_timeout','path_timeout','max_sample_skew','joint_min_rate_hz'):
             if not np.isfinite(self.cfg[k]) or self.cfg[k] <= 0:
                 raise ValueError('Invalid '+k)
+        if self.cfg['motor_status_timeout'] > .35:
+            raise ValueError('motor_status_timeout must be <= 0.35s for the 400ms firmware watchdog profile')
+        if self.cfg['imu_input_max_age'] > .05:
+            raise ValueError('Raw IMU input age must be <= 0.05s, matching the bridge input gate')
+        if self.cfg['imu_topic'] not in ('/imu/data', '/imu/bridge'):
+            raise ValueError('Use the timestamped STM32 IMU source /imu/data or /imu/bridge')
         for k in ('left_feedback_sign','right_feedback_sign'):
             if self.cfg[k] not in (-1.,1.):
                 raise ValueError('Invalid '+k)
         self.policy = Policy(self.cfg['checkpoint']) if self.cfg['checkpoint'] else None
         if self.mode == 'pi_sac' and self.policy is None:
-            raise ValueError('PI+SAC requires imported verified 50k checkpoint bundle')
+            raise ValueError('PI+SAC requires an imported verified checkpoint bundle')
         self.contract = self.policy.contract if self.policy else Contract()
         self.hardware = None
         if self.mode != 'shadow':
-            self.hardware = hardware_contract(json.loads(Path(self.cfg['hardware_file']).expanduser().read_text()))
+            self.hardware = load_hardware_contract(self.cfg['hardware_file'])
         self.pi = WheelPI(self.cfg['wheel_radius'], self.cfg['wheel_separation'])
         self.armed = False
         self.fault = ''
+        self.safety_fault = ''  # Giữ lý do disarm đến khi người vận hành arm lại thành công.
         self.action = np.zeros(2)
         self.action_at = 0.
         self.command = np.zeros(2)
         self.command_at = 0.
         self.samples = {}
+        self.sample_rejections = {}
         self.status = 0
         self.status_at = 0.
         self.joint_stamp = None
@@ -79,8 +89,11 @@ class RealController(Node):
         self.listener = TransformListener(self.tf, self)
         qos = qos_profile_sensor_data
         self.create_subscription(JointState, '/motor_fb', self.on_joint, qos)
-        self.create_subscription(Imu, '/imu/bridge', lambda m: self.on_sample('imu', m), qos)
-        self.create_subscription(Odometry, '/odom', lambda m: self.on_sample('odom', m), qos)
+        # Controller dùng snapshot mới nhất, không xử lý FIFO IMU/odom đã cũ.
+        # Giữ nhịp/nguồn/timestamp cảm biến, chỉ giới hạn queue phía subscriber.
+        latest = QoSProfile(depth=1, reliability=qos.reliability, durability=qos.durability)
+        self.create_subscription(Imu, self.cfg['imu_topic'], lambda m: self.on_sample('imu', m), latest)
+        self.create_subscription(Odometry, '/odom', lambda m: self.on_sample('odom', m), latest)
         self.create_subscription(UInt8, '/motor_status', self.on_status, 10)
         self.create_subscription(Twist, self.cfg['reference_topic'], self.on_command, 1)
         self.create_subscription(RosPath, self.cfg['path_topic'], self.on_path, 1)
@@ -96,7 +109,8 @@ class RealController(Node):
             folder = Path(self.cfg['log_dir']).expanduser(); folder.mkdir(parents=True, exist_ok=True)
             self.log = (folder/f'real_{self.mode}_{self.get_clock().now().nanoseconds}.jsonl').open('x')
         self.get_logger().info(f'{self.mode}: DISARMED; feedback-clocked PI, actor {1/self.contract.step_seconds:g} Hz; '
-                               + ('checkpoint loaded' if self.policy else 'NO CHECKPOINT: data/PI only'))
+                               + (f'checkpoint {self.policy.timesteps} steps loaded'
+                                  if self.policy else 'NO CHECKPOINT: data/PI only'))
 
     def ros_now(self):
         return self.get_clock().now().nanoseconds*1e-9
@@ -111,14 +125,39 @@ class RealController(Node):
             self.trip('Firmware command timeout during motion')
 
     def on_sample(self, key, msg):
+        now, ros_now = monotonic(), self.ros_now()
         try:
             old = self.samples.get(key)
-            source_stamp(seconds(msg.header.stamp), self.ros_now(),
+            if key == 'imu' and not 0 <= ros_now-seconds(msg.header.stamp) <= self.cfg['imu_input_max_age']:
+                raise ValueError('IMU input timestamp outside 0..50ms source-age budget')
+            source_stamp(seconds(msg.header.stamp), ros_now,
                          seconds(old[0].header.stamp) if old else None, self.cfg['sensor_timeout'])
-            self.samples[key] = (msg, monotonic())
+            self.samples[key] = (msg, now)
         except ValueError as exc:
+            self.sample_rejections[key] = self.sample_rejections.get(key, 0)+1
+            try:
+                self.sample_ready(key, now, ros_now)
+            except (ValueError, KeyError):
+                pass
+            else:
+                # Không làm mới timestamp/receipt của cache bằng gói bị loại.
+                self.get_logger().warning(f'Rejected {key} sample: {exc}; keeping valid fresh cache',
+                                          throttle_duration_sec=5.)
+                return
             self.samples.pop(key, None)
-            self.trip(key+': '+str(exc))
+            age = ros_now-seconds(msg.header.stamp)
+            self.trip(f'{key}: {exc}; source_age_s={age:.3f}')
+
+    def sample_ready(self, key, now, ros_now):
+        if key not in self.samples:
+            raise ValueError('Missing '+key)
+        msg, received = self.samples[key]
+        if not 0 <= now-received <= self.cfg['sensor_timeout']:
+            raise ValueError(f'{key}: stale receipt age_s={now-received:.3f}')
+        try:
+            source_stamp(seconds(msg.header.stamp), ros_now, timeout=self.cfg['sensor_timeout'])
+        except ValueError as exc:
+            raise ValueError(f'{key}: {exc}; cached_source_age_s={ros_now-seconds(msg.header.stamp):.3f}') from exc
 
     def on_command(self, msg):
         values = np.array([msg.linear.x, msg.angular.z])
@@ -132,7 +171,7 @@ class RealController(Node):
 
     def on_path(self, msg):
         if msg.header.frame_id != self.cfg['map_frame'] or len(msg.poses) < 2:
-            self.path = None; self.trip('Path must contain >=2 points in map'); return
+            self.path = None; self.trip('Path must contain >=2 points in '+self.cfg['map_frame']); return
         points = [(p.pose.position.x, p.pose.position.y) for p in msg.poses]
         if not np.all(np.isfinite(points)):
             self.path = None; self.trip('Nonfinite path'); return
@@ -153,15 +192,33 @@ class RealController(Node):
         return ''
 
     def basic_ready(self, now, enabled=False):
-        if now-self.status_at > self.cfg['sensor_timeout'] or self.status & 0x03 != 0x03 or self.status & 0x0C:
-            raise ValueError('Missing/faulted motor status or CAN feedback')
+        if self.status_at <= 0:
+            raise ValueError('Missing motor status')
+        age = now-self.status_at
+        if age > self.cfg['motor_status_timeout']:
+            raise ValueError(f'Stale motor status: age={age:.3f}s > '
+                             f'{self.cfg["motor_status_timeout"]:.3f}s; bits=0x{self.status:02x}')
+        if self.status & 0x03 != 0x03:
+            raise ValueError(f'Motor CAN feedback not fresh: bits=0x{self.status:02x}')
+        if self.status & 0x0C:
+            raise ValueError(f'Motor CAN bus-off: bits=0x{self.status:02x}')
         if enabled and not self.status & 0x10:
             raise ValueError('Motor is disabled; controller never enables it automatically')
         if self.joint_stamp is None or now-self.joint_at > self.cfg['sensor_timeout']:
             raise ValueError('Missing/stale wheel feedback')
-        source_stamp(self.joint_stamp, self.ros_now(), timeout=self.cfg['sensor_timeout'])
+        ros_now = self.ros_now()
+        try:
+            source_stamp(self.joint_stamp, ros_now, timeout=self.cfg['sensor_timeout'])
+        except ValueError as exc:
+            raise ValueError(f'wheel: {exc}; source_age_s={ros_now-self.joint_stamp:.3f}') from exc
         if len(self.joint_intervals) < 10 or 1/np.mean(self.joint_intervals) < self.cfg['joint_min_rate_hz']:
             raise ValueError('Insufficient measured feedback rate')
+        if enabled:
+            # Cả PI/SAC phải dừng khi cache nguồn thật sự hết hạn, kể cả không
+            # có callback mới. Mẫu bị loại không được kéo dài tuổi cache này.
+            ros_now = self.ros_now()
+            for key in ('imu', 'odom'):
+                self.sample_ready(key, now, ros_now)
 
     def on_arm(self, request, response):
         if not request.data:
@@ -178,7 +235,7 @@ class RealController(Node):
             # Validate IMU mounting for all modes; essential to future SAC comparison.
             self.imu_in_base()
             self.reset_control()
-            self.armed = True; self.fault = ''
+            self.armed = True; self.fault = ''; self.safety_fault = ''
             response.success = True
             response.message = 'Armed. Motion still requires fresh safe reference; PI+SAC also requires valid observation.'
         except (ValueError, KeyError, RuntimeError) as exc:
@@ -200,6 +257,7 @@ class RealController(Node):
         self.reset_control()
         self.fault = reason
         if was_armed:
+            self.safety_fault = reason
             self.disable.publish(Bool(data=False))
             self.get_logger().error('DISARMED: '+reason)
 
@@ -229,7 +287,7 @@ class RealController(Node):
     def observe(self):
         now = monotonic()
         if self.path is None or now-self.path_at > self.cfg['path_timeout']:
-            raise ValueError('Missing/stale Nav2 global path')
+            raise ValueError('Missing/stale reference path')
         if now-self.command_at > self.cfg['command_timeout']:
             raise ValueError('Missing/stale safe velocity reference')
         if 'odom' not in self.samples:
@@ -242,12 +300,12 @@ class RealController(Node):
         stamps = [seconds(self.samples['imu'][0].header.stamp), seconds(odom.header.stamp), self.joint_stamp]
         if max(stamps)-min(stamps) > self.cfg['max_sample_skew']:
             raise ValueError('Sensor timestamp skew exceeds configured limit')
-        # Pose at odometry sample time, not an unrelated latest AMCL pose.
+        # Pose đúng timestamp odometry; frame có thể là map hoặc odom.
         try:
             tf = self.tf.lookup_transform(self.cfg['map_frame'], self.cfg['base_frame'],
                                           Time.from_msg(odom.header.stamp))
         except Exception as exc:
-            raise ValueError('Map pose TF unavailable at sensor time: '+str(exc)) from exc
+            raise ValueError(self.cfg['map_frame']+' pose TF unavailable at sensor time: '+str(exc)) from exc
         source_stamp(seconds(tf.header.stamp), self.ros_now(), timeout=self.cfg['sensor_timeout'])
         p, q = tf.transform.translation, tf.transform.rotation
         yaw = atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
@@ -329,7 +387,7 @@ class RealController(Node):
                     self.basic_ready(now, enabled=self.armed)
                     obs, metrics = self.observe()
                     if self.mode == 'pi_sac' and abs(metrics['cross_track']) > self.contract.max_path_deviation:
-                        raise ValueError('AMCL cross-track exceeds checkpoint corridor')
+                        raise ValueError(self.cfg['map_frame']+' cross-track exceeds checkpoint corridor')
                     if self.policy is not None and self.mode in ('shadow','pi_sac'):
                         self.action = self.policy.predict(obs)
                         self.action_at = now
@@ -350,7 +408,14 @@ class RealController(Node):
         if now-self.last_diag >= .5:
             self.last_diag = now
             self.diag.publish(String(data=json.dumps(dict(mode=self.mode, armed=self.armed,
-                has_checkpoint=self.policy is not None, fault=self.fault,
+                has_checkpoint=self.policy is not None,
+                fault=self.safety_fault or self.fault,
+                observation_note=self.fault if self.safety_fault and self.fault != self.safety_fault else '',
+                motor_status_bits=self.status,
+                motor_status_age_s=now-self.status_at if self.status_at > 0 else None,
+                motor_status_timeout_s=self.cfg['motor_status_timeout'],
+                rejected_sensor_samples=self.sample_rejections,
+                imu_source=self.cfg['imu_topic'],
                 measured_feedback_hz=1/np.mean(self.joint_intervals) if self.joint_intervals else 0.,
                 training_control_hz=1000., actor_hz=1/self.contract.step_seconds))))
 

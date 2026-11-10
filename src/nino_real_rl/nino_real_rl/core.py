@@ -4,7 +4,9 @@ Changes for hardware: feedback-clocked PI, immediate zero on stop/fault,
 integral clamping retained from training. Deployment differences are documented.
 """
 from dataclasses import dataclass
+import json
 from math import isfinite
+from pathlib import Path
 import numpy as np
 
 from .features import path_features, imu_features
@@ -131,3 +133,21 @@ def hardware_contract(data):
     if not isfinite(watchdog) or not 0 < watchdog <= .5:
         raise ValueError('Verify a firmware torque watchdog <= 0.5s')
     return data
+
+
+def load_hardware_contract(filename):
+    """Kiểm tra trước khi mở bringup; không tự sửa/xác nhận phần cứng."""
+    if not filename:
+        raise ValueError('Live mode requires hardware_file pointing to verified hardware JSON')
+    path = Path(filename).expanduser().resolve()
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ValueError(f'Cannot read hardware_file {path}: {exc}') from exc
+    if not isinstance(data, dict):
+        raise ValueError(f'Invalid hardware_file {path}: expected JSON object')
+    try:
+        return hardware_contract(data)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f'Invalid hardware_file {path}: {exc}. '
+                         'Verify hardware before editing; do not set flags just to bypass validation.') from exc
